@@ -15,13 +15,52 @@ mongoose.connect("mongodb+srv://anthony:1Anthony@atlascluster.frneldu.mongodb.ne
 .catch(err => console.error('Connection error', err));
 
 
-app.post('/updateSubmit', (req, res) => {
-    const inputs = req.body.inputs;
-  
-    // Perform whatever processing you need with the inputs
-    console.log('Received inputs:', inputs);
+app.post('/update', (req, res) => {
+    const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, temp, est } = req.body.inputs || {};
+    const filter = { location };
 
-    res.json(inputs);
+    console.log('filter',filter.location)
+    if (filter.location === "") {
+        console.log('here')
+        console.log('Blank filter detected. No update performed.');
+        res.status(400).json({ error: 'Filter cannot be empty. Specify criteria to update an item.' });
+    }
+
+    const update = {
+        lot,
+        vendor,
+        brand,
+        species,
+        description,
+        grade,
+        quantity,
+        weight,
+        packdate,
+        temp,
+        est
+    };
+    const options = { new: true };
+
+    console.log('+++++++++++++++++++++++++++++++++++');
+    console.log('Update:', update);
+    console.log('Updating...');
+
+    FreezerModel.findOneAndUpdate(filter,update, options)
+        .then(item => {
+            if (item) {
+                console.log(item)
+                res.status(200).json(item);
+            } else {
+                // Send a 404 status if no items are found
+                console.log('No items found');
+                res.status(404).json({ message: 'No items found' });
+            }
+        })
+        .catch(err => {
+            // Log the error and send a 500 status if something goes wrong
+            console.error('Error during database operation:', err);
+            res.status(500).json({ error: 'An error occurred while retrieving the items.' });
+        });
   });
 
   // inventoryFind
