@@ -8,60 +8,48 @@ const app = express()
 app.use(express.json())
 app.use(cors())
 
-//mongoose.connect("mongodb+srv://tester:testing12345@atlascluster.frneldu.mongodb.net/AdamsFoods")
 
 mongoose.connect("mongodb+srv://anthony:1Anthony@atlascluster.frneldu.mongodb.net/?retryWrites=true&w=majority&appName=AtlasCluster")
 .then(() => console.log('Connected to MongoDB Atlas'))
 .catch(err => console.error('Connection error', err));
 
 
-app.post('/update', (req, res) => {
+//inventoryAdd
+app.post('/inventoryAdd', (req, res) => {
     const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, temp, est } = req.body.inputs || {};
+
     const filter = { location };
-
-    console.log('filter',filter.location)
-    if (filter.location === "") {
-        console.log('here')
-        console.log('Blank filter detected. No update performed.');
-        res.status(400).json({ error: 'Filter cannot be empty. Specify criteria to update an item.' });
-    }
-
-    const update = {
-        lot,
-        vendor,
-        brand,
-        species,
-        description,
-        grade,
-        quantity,
-        weight,
-        packdate,
-        temp,
-        est
-    };
-    const options = { new: true };
+    const newItem = { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, temp, est };
 
     console.log('+++++++++++++++++++++++++++++++++++');
-    console.log('Update:', update);
-    console.log('Updating...');
+    console.log('Filter:', filter);
+    console.log('New Item:', newItem);
 
-    FreezerModel.findOneAndUpdate(filter,update, options)
+    if (!location || location.trim() === '') {
+        return res.status(400).json({ error: 'Location field cannot be blank.' });
+    }
+
+    FreezerModel.findOne(filter)
         .then(item => {
             if (item) {
-                console.log(item)
-                res.status(200).json(item);
+                return res.status(404).json({ error: 'Item Already Exists. Update instead.' });
             } else {
-                // Send a 404 status if no items are found
-                console.log('No items found');
-                res.status(404).json({ message: 'No items found' });
+                return FreezerModel.create(newItem)
+                    .then(createdItem => {
+                        console.log('Item added:', createdItem);
+                        res.status(201).json(createdItem);
+                    })
+                    .catch(err => {
+                        console.error('Error during database operation:', err);
+                        res.status(500).json({ error: 'An error occurred while adding the item.' });
+                    });
             }
         })
         .catch(err => {
-            // Log the error and send a 500 status if something goes wrong
             console.error('Error during database operation:', err);
-            res.status(500).json({ error: 'An error occurred while retrieving the items.' });
+            res.status(500).json({ error: 'An error occurred while checking for the item.' });
         });
-  });
+});
 
   // inventoryFind
   app.post('/inventoryFind', (req, res) => {
@@ -105,8 +93,82 @@ app.post('/update', (req, res) => {
         });
 });
 
-  
+app.post('/inventoryUpdate', (req, res) => {
+    const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, temp, est } = req.body.inputs || {};
+    const filter = { location };
 
+    console.log('filter',filter.location)
+    if (filter.location === "") {
+        console.log('Blank filter detected. No update performed.');
+        res.status(400).json({ error: 'Filter cannot be empty. Specify criteria to update an item.' });
+    }
+
+    const update = {lot,vendor,brand,species,description,grade,quantity,weight,packdate,temp,est};
+    const options = { new: true };
+
+    console.log('+++++++++++++++++++++++++++++++++++');
+    console.log('Update:', update);
+    console.log('Updating...');
+
+    FreezerModel.findOneAndUpdate(filter,update, options)
+        .then(item => {
+            if (item) {
+                console.log(item)
+                res.status(200).json(item);
+            } else {
+                // Send a 404 status if no items are found
+                console.log('No items found');
+                res.status(404).json({ message: 'No items found' });
+            }
+        })
+        .catch(err => {
+            // Log the error and send a 500 status if something goes wrong
+            console.error('Error during database operation:', err);
+            res.status(500).json({ error: 'An error occurred while retrieving the items.' });
+        });
+  });
+
+app.post("/inventoryRemove", (req, res) => {
+    const { location} = req.body.inputs || {};
+    const filter = { location };
+
+    console.log('+++++++++++++++++++++++++++++++++++');
+    console.log('Filter:', filter);
+
+    if (!location || location.trim() === '') {
+        return res.status(400).json({ error: 'Location field cannot be blank.' });
+    }
+
+    FreezerModel.findOne(filter)
+    .then(item => {
+        if (item) {
+            return FreezerModel.deleteOne(filter)
+                .then(() => {
+                    console.log('Item successfully deleted.');
+                    res.status(200).json({ message: 'Item successfully deleted.' });
+                })
+                .catch(err => {
+                    console.error('Error during delete operation:', err);
+                    res.status(500).json({ error: 'An error occurred while deleting the item.' });
+                });
+
+            
+        } else {
+            console.log('No items found');
+            res.status(404).json({ message: 'No items found' });
+        }
+
+    })
+    .catch(err => {
+        console.error('Error during database operation:', err);
+        res.status(500).json({ error: 'An error occurred while deleting the items.' });
+    });
+
+});
+
+
+  
+//-----------------------USER SECTION---------------------------------------------------------------------------------
 
 app.post("/login", (req, res) => {
     const { email, password } = req.body;
