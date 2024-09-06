@@ -97,36 +97,41 @@ app.post('/inventoryUpdate', (req, res) => {
     const { location, lot, vendor, brand, species, description, grade, quantity, weight, packdate, temp, est } = req.body.inputs || {};
     const filter = { location };
 
-    console.log('filter',filter.location)
-    if (filter.location === "") {
+    console.log('filter', filter.location);
+
+    if (!filter.location) {
+        // If the location is blank or undefined, send a 400 response and return
         console.log('Blank filter detected. No update performed.');
-        res.status(400).json({ error: 'Filter cannot be empty. Specify criteria to update an item.' });
+        return res.status(400).json({ error: 'Location cannot be empty. Specify criteria to update an item.' });
     }
 
-    const update = {lot,vendor,brand,species,description,grade,quantity,weight,packdate,temp,est};
+    const update = { lot, vendor, brand, species, description, grade, quantity, weight, packdate, temp, est };
     const options = { new: true };
 
     console.log('+++++++++++++++++++++++++++++++++++');
     console.log('Update:', update);
     console.log('Updating...');
 
-    FreezerModel.findOneAndUpdate(filter,update, options)
+    FreezerModel.findOneAndUpdate(filter, update, options)
         .then(item => {
             if (item) {
-                console.log(item)
+                console.log(item);
                 res.status(200).json(item);
             } else {
                 // Send a 404 status if no items are found
                 console.log('No items found');
-                res.status(404).json({ message: 'No items found' });
+                res.status(404).json({ error: 'No items found' });
             }
         })
         .catch(err => {
             // Log the error and send a 500 status if something goes wrong
             console.error('Error during database operation:', err);
-            res.status(500).json({ error: 'An error occurred while retrieving the items.' });
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'An error occurred while updating the item.' });
+            }
         });
-  });
+});
+
 
 app.post("/inventoryRemove", (req, res) => {
     const { location} = req.body.inputs || {};
@@ -155,7 +160,7 @@ app.post("/inventoryRemove", (req, res) => {
             
         } else {
             console.log('No items found');
-            res.status(404).json({ message: 'No items found' });
+            res.status(404).json({ error: 'No items found' });
         }
 
     })
