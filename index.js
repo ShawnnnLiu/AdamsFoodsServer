@@ -8,9 +8,9 @@ const app = express()
 app.use(express.json())
 app.use(cors())
 
-mongoose.connect("mongodb+srv://tester:testing12345@atlascluster.frneldu.mongodb.net/AdamsFoods")
+//mongoose.connect("mongodb+srv://tester:testing12345@atlascluster.frneldu.mongodb.net/AdamsFoods")
 
-//mongoose.connect("mongodb+srv://shawn:Liu123456@atlascluster.frneldu.mongodb.net/AdamsFoods")
+mongoose.connect("mongodb+srv://shawn:Liu123456@atlascluster.frneldu.mongodb.net/AdamsFoods")
 .then(() => console.log('Connected to MongoDB Atlas'))
 .catch(err => console.error('Connection error', err));
 
