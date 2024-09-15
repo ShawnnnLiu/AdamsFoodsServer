@@ -7,6 +7,6 @@ const UserSchema = new mongoose.Schema({
 });
 
 // Connect the schema to the `UserDatabase` collection
-const UserModel = mongoose.model("UserDatabase", UserSchema);
+const UserModel = mongoose.model("userdatabases", UserSchema);
 
 module.exports = UserModel;

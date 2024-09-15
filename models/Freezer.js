@@ -17,6 +17,6 @@ const FreezerSchema = new mongoose.Schema({
 });
 
 // Connect the schema to the `UserDatabase` collection
-const FreezerModel = mongoose.model("FreezerInventory", FreezerSchema);
+const FreezerModel = mongoose.model("freezerinventories", FreezerSchema);
 
 module.exports = FreezerModel;
