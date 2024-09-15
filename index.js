@@ -4,27 +4,25 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const UserModel = require("./models/User");
 const FreezerModel = require("./models/Freezer");
-
 const app = express();
-const SECRET_KEY = "your_secret_key"; // Store securely (e.g., environment variable)
+
+// JWT auth
+require('dotenv').config(); 
+const SECRET_KEY = process.env.JWT_SECRET; 
 
 app.use(express.json());
 app.use(cors());
 
 // MongoDB connection
+
+const MONGODB_URI_SHAWN = process.env.MONGODB_URI_SHAWN;
+const MONGODB_URI_ANTHONY = process.env.MONGODB_URI_ANTHONY;
+
 mongoose
-  .connect(
-    "mongodb+srv://shawn:Liu123456@atlascluster.frneldu.mongodb.net/AdamsFoods"
-  )
+  .connect(MONGODB_URI_SHAWN)  // change varaible when you're working on it
   .then(() => console.log("Connected to MongoDB Atlas"))
   .catch((err) => console.error("Connection error", err));
 
-// mongoose
-//   .connect(
-//     "mongodb+srv://anthony:1Anthony@atlascluster.frneldu.mongodb.net/?retryWrites=true&w=majority&appName=AtlasCluster"
-//   )
-//   .then(() => console.log("Connected to MongoDB Atlas"))
-//   .catch((err) => console.error("Connection error", err));
 
 // ----------------- JWT Middleware -----------------
 const verifyToken = (req, res, next) => {
