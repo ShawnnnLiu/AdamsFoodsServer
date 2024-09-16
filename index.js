@@ -7,8 +7,8 @@ const FreezerModel = require("./models/Freezer");
 const app = express();
 
 // JWT auth
-require('dotenv').config(); 
-const SECRET_KEY = process.env.JWT_SECRET; 
+require("dotenv").config();
+const SECRET_KEY = process.env.JWT_SECRET;
 
 app.use(express.json());
 app.use(cors());
@@ -19,10 +19,31 @@ const MONGODB_URI_SHAWN = process.env.MONGODB_URI_SHAWN;
 const MONGODB_URI_ANTHONY = process.env.MONGODB_URI_ANTHONY;
 
 mongoose
-  .connect(MONGODB_URI_SHAWN)  // change varaible when you're working on it
+  .connect(MONGODB_URI_ANTHONY) // change varaible when you're working on it
   .then(() => console.log("Connected to MongoDB Atlas"))
   .catch((err) => console.error("Connection error", err));
 
+const fs = require("fs");
+
+// Global variable to store valid locations
+let validLocations = [];
+
+// Read the locations from the .txt file and store in memory
+const loadLocations = () => {
+  try {
+    const data = fs.readFileSync("./locations.txt", "utf8");
+    validLocations = data
+      .split("\n")
+      .map((location) => location.trim())
+      .filter(Boolean);
+    console.log("Locations loaded successfully");
+  } catch (err) {
+    console.error("Error reading locations file:", err);
+  }
+};
+
+// Call this function once when the server starts
+loadLocations();
 
 // ----------------- JWT Middleware -----------------
 const verifyToken = (req, res, next) => {
@@ -43,7 +64,7 @@ const verifyToken = (req, res, next) => {
 // ----------------- Inventory Routes -----------------
 
 // Add inventory item (Protected Route)
-app.post("/inventoryAdd", verifyToken, (req, res) => {
+app.post("/inventoryAdd", (req, res) => {
   const {
     location,
     lot,
@@ -61,6 +82,10 @@ app.post("/inventoryAdd", verifyToken, (req, res) => {
 
   if (!location || location.trim() === "") {
     return res.status(400).json({ error: "Location field cannot be blank." });
+  }
+
+  if (!validLocations.includes(location)) {
+    return res.status(400).json({ error: "Location Does Not Exist" });
   }
 
   const newItem = {
@@ -81,12 +106,14 @@ app.post("/inventoryAdd", verifyToken, (req, res) => {
   FreezerModel.create(newItem)
     .then((createdItem) => res.status(201).json(createdItem))
     .catch((err) =>
-      res.status(500).json({ error: "An error occurred while adding the item." })
+      res
+        .status(500)
+        .json({ error: "An error occurred while adding the item." })
     );
 });
 
 // Find inventory item (Protected Route)
-app.post("/inventoryFind", verifyToken, (req, res) => {
+app.post("/inventoryFind", (req, res) => {
   const {
     location,
     lot,
@@ -121,7 +148,7 @@ app.post("/inventoryFind", verifyToken, (req, res) => {
       if (items.length > 0) {
         res.json(items);
       } else {
-        res.status(404).json({ message: "No items found" });
+        res.status(404).json({ error: "No Items Found" });
       }
     })
     .catch((err) =>
@@ -132,7 +159,7 @@ app.post("/inventoryFind", verifyToken, (req, res) => {
 });
 
 // Update inventory item (Protected Route)
-app.post("/inventoryUpdate", verifyToken, (req, res) => {
+app.post("/inventoryUpdate", (req, res) => {
   const {
     location,
     lot,
@@ -146,15 +173,21 @@ app.post("/inventoryUpdate", verifyToken, (req, res) => {
     packdate,
     temp,
     est,
-  } = req.body.inputs || {};
+    currentItem,
+  } = req.body.updateInputs || {};
 
-  const filter = { location };
-  if (!filter.location) {
-    return res
-      .status(400)
-      .json({
-        error: "Location cannot be empty. Specify criteria to update an item.",
-      });
+  const filter = currentItem;
+  if (!filter || location !== filter.location){
+    return res.status(400).json({
+      error: "Set the Item you wish to Update.",
+    });
+  }
+  
+  if (!location) {
+    return res.status(400).json({
+      
+      error: "Location cannot be empty. Specify criteria to update an item.",
+    });
   }
 
   const update = {
@@ -178,19 +211,49 @@ app.post("/inventoryUpdate", verifyToken, (req, res) => {
       if (item) {
         res.status(200).json(item);
       } else {
-        res.status(404).json({ error: "No items found" });
+        res.status(404).json({ error: "No Items Found" });
       }
     })
     .catch((err) =>
-      res.status(500).json({ error: "An error occurred while updating the item." })
+      res
+        .status(500)
+        .json({ error: "An Error occurred while Updating the Item." })
     );
 });
 
 // Remove inventory item (Protected Route)
-app.post("/inventoryRemove", verifyToken, (req, res) => {
-  const { location } = req.body.inputs || {};
-  const filter = { location };
+app.post("/inventoryRemove", (req, res) => {
+  const {
+    location,
+    lot,
+    vendor,
+    brand,
+    species,
+    description,
+    grade,
+    quantity,
+    weight,
+    packdate,
+    temp,
+    est,
+  } = req.body.currentItem || {};
 
+  const filter = {
+    location,
+    lot,
+    vendor,
+    brand,
+    species,
+    description,
+    grade,
+    quantity,
+    weight,
+    packdate,
+    temp,
+    est,
+  };
+
+  console.log("filter:",filter)
   if (!location || location.trim() === "") {
     return res.status(400).json({ error: "Location field cannot be blank." });
   }
@@ -199,20 +262,35 @@ app.post("/inventoryRemove", verifyToken, (req, res) => {
     .then((item) => {
       if (item) {
         return FreezerModel.deleteOne(filter)
-          .then(() => res.status(200).json({ message: "Item successfully deleted." }))
+          .then(() =>
+            res.status(200).json({ message: "Item Successfully Deleted." })
+          )
           .catch((err) =>
             res
               .status(500)
-              .json({ error: "An error occurred while deleting the item." })
+              .json({ error: "An Error occurred while Removing the Item." })
           );
       } else {
-        res.status(404).json({ error: "No items found" });
+        res.status(404).json({ error: "No Items Found" });
       }
     })
     .catch((err) =>
-      res.status(500).json({ error: "An error occurred while deleting the items." })
+      res
+        .status(500)
+        .json({ error: "An Error occurred while Removing the Item." })
     );
 });
+
+app.post("/verifyLocation", (req, res) => {
+  const location = req.body.location;
+  if (!validLocations.includes(location)) {
+    return res.status(400).json({ error: "Location Does Not Exist" });
+  }
+  return res.status(200).json({ message: "Locations Verified." })
+
+})
+
+
 
 // ----------------- User Routes -----------------
 
@@ -225,7 +303,7 @@ app.post("/login", (req, res) => {
       if (user && user.password === password) {
         // Generate JWT
         const token = jwt.sign({ userId: user._id }, SECRET_KEY, {
-          expiresIn: "5min", // Token expiration time
+          expiresIn: "1min", // Token expiration time
         });
         res.json({ message: "Success", token });
       } else {
