@@ -177,11 +177,6 @@ app.post("/inventoryUpdate", (req, res) => {
   } = req.body.updateInputs || {};
 
   const filter = currentItem;
-  if (!filter || location !== filter.location){
-    return res.status(400).json({
-      error: "Set the Item you wish to Update.",
-    });
-  }
   
   if (!location) {
     return res.status(400).json({
@@ -191,6 +186,7 @@ app.post("/inventoryUpdate", (req, res) => {
   }
 
   const update = {
+    location,
     lot,
     vendor,
     brand,
