@@ -4,6 +4,7 @@ const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const UserModel = require("./models/User");
 const FreezerModel = require("./models/Freezer");
+const HistoryModel = require("./models/History");
 const app = express();
 
 // JWT auth
@@ -148,7 +149,8 @@ app.post("/inventoryFind", (req, res) => {
       if (items.length > 0) {
         res.json(items);
       } else {
-        res.status(404).json({ error: "No Items Found" });
+        // res.status(404).json({ error: "No Items Found" });
+        res.send("INVALID")
       }
     })
     .catch((err) =>
@@ -279,13 +281,19 @@ app.post("/inventoryRemove", (req, res) => {
 
 app.post("/verifyLocation", (req, res) => {
   const location = req.body.location;
+
   if (!validLocations.includes(location)) {
-    return res.status(400).json({ error: "Location Does Not Exist" });
+    return res.send("INVALID");
   }
-  return res.status(200).json({ message: "Locations Verified." })
+  return res.send("OK");
+});
 
-})
 
+// ----------------- History Routes -----------------
+app.post("/getHistory", (req, res) => {// TODO: Create route to the mongodb database to get the ten most recent changes made 
+
+
+});
 
 
 // ----------------- User Routes -----------------
@@ -299,7 +307,7 @@ app.post("/login", (req, res) => {
       if (user && user.password === password) {
         // Generate JWT
         const token = jwt.sign({ userId: user._id }, SECRET_KEY, {
-          expiresIn: "1min", // Token expiration time
+          expiresIn: "5min", // Token expiration time
         });
         res.json({ message: "Success", token });
       } else {
