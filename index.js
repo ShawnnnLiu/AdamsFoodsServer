@@ -7,6 +7,8 @@ const FreezerModel = require("./models/Freezer");
 const HistoryModel = require("./models/History");
 const app = express();
 
+console.log("=== SERVER RESTART ===", new Date().toLocaleString());
+
 // JWT auth
 require("dotenv").config();
 const SECRET_KEY = process.env.JWT_SECRET;
@@ -150,7 +152,7 @@ app.post("/inventoryFind", (req, res) => {
         res.json(items);
       } else {
         // res.status(404).json({ error: "No Items Found" });
-        res.send("INVALID")
+        res.send("INVALID");
       }
     })
     .catch((err) =>
@@ -179,10 +181,9 @@ app.post("/inventoryUpdate", (req, res) => {
   } = req.body.updateInputs || {};
 
   const filter = currentItem;
-  
+
   if (!location) {
     return res.status(400).json({
-      
       error: "Location cannot be empty. Specify criteria to update an item.",
     });
   }
@@ -251,7 +252,7 @@ app.post("/inventoryRemove", (req, res) => {
     est,
   };
 
-  console.log("filter:",filter)
+  console.log("filter:", filter);
   if (!location || location.trim() === "") {
     return res.status(400).json({ error: "Location field cannot be blank." });
   }
@@ -288,13 +289,37 @@ app.post("/verifyLocation", (req, res) => {
   return res.send("OK");
 });
 
-
 // ----------------- History Routes -----------------
-app.post("/getHistory", (req, res) => {// TODO: Create route to the mongodb database to get the ten most recent changes made 
+app.post("/addHistory", (req, res) => {
+  const newHistory = {
+    time: new Date().toLocaleString(),
+    change: req.body.change,
+    location: req.body.location,
+    lot: req.body.lot,
+    vendor: req.body.vendor,
+    brand: req.body.brand,
+    species: req.body.species,
+    description: req.body.description,
+    grade: req.body.grade,
+    quantity: req.body.quantity,
+    weight: req.body.weight,
+    packdate: req.body.packdate,
+    temp: req.body.temp,
+    est: req.body.est,
+  };
+  console.log(newHistory);
 
-
+  HistoryModel.create(newHistory)
+    .then((item) => res.status(201).json(item))
+    .catch((err) => {
+      console.error("Error adding history:", err);
+      res.status(500).json({ error: "Error adding history item" });
+    });
 });
 
+app.get("/getHistory", (req, res) => {
+  // TODO: Create route to the mongodb database to get the ten most recent changes made
+});
 
 // ----------------- User Routes -----------------
 
