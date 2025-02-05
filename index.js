@@ -101,7 +101,7 @@ app.post("/inventoryAdd", (req, res) => {
     quantity,
     weight,
     packdate,
-    date_recvd: date_recvd ? new Date(date_recvd) : null,
+    date_recvd,
     est,
   };
 
