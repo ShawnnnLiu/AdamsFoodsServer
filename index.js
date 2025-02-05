@@ -17,12 +17,11 @@ app.use(express.json());
 app.use(cors());
 
 // MongoDB connection
-
 const MONGODB_URI_SHAWN = process.env.MONGODB_URI_SHAWN;
 const MONGODB_URI_ANTHONY = process.env.MONGODB_URI_ANTHONY;
 
 mongoose
-  .connect(MONGODB_URI_ANTHONY) // change varaible when you're working on it
+  .connect(MONGODB_URI_ANTHONY)
   .then(() => console.log("Connected to MongoDB Atlas"))
   .catch((err) => console.error("Connection error", err));
 
@@ -59,7 +58,7 @@ const verifyToken = (req, res, next) => {
     if (err) {
       return res.status(401).json({ message: "Invalid token" });
     }
-    req.userId = decoded.userId; // Attach user ID to request
+    req.userId = decoded.userId;
     next();
   });
 };
@@ -79,7 +78,7 @@ app.post("/inventoryAdd", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd,
     est,
   } = req.body.inputs || {};
 
@@ -102,7 +101,7 @@ app.post("/inventoryAdd", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd: date_recvd ? new Date(date_recvd) : null,
     est,
   };
 
@@ -128,7 +127,7 @@ app.post("/inventoryFind", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd,
     est,
   } = req.body.inputs || {};
 
@@ -143,7 +142,7 @@ app.post("/inventoryFind", (req, res) => {
   if (quantity) query.quantity = quantity;
   if (weight) query.weight = weight;
   if (packdate) query.packdate = packdate;
-  if (temp) query.temp = temp;
+  if (date_recvd) query.date_recvd = date_recvd;
   if (est) query.est = est;
 
   FreezerModel.find(query)
@@ -151,7 +150,6 @@ app.post("/inventoryFind", (req, res) => {
       if (items.length > 0) {
         res.json(items);
       } else {
-        // res.status(404).json({ error: "No Items Found" });
         res.send("INVALID");
       }
     })
@@ -175,7 +173,7 @@ app.post("/inventoryUpdate", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd,
     est,
     currentItem,
   } = req.body.updateInputs || {};
@@ -199,7 +197,7 @@ app.post("/inventoryUpdate", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd,
     est,
   };
 
@@ -233,7 +231,7 @@ app.post("/inventoryRemove", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd,
     est,
   } = req.body.currentItem || {};
 
@@ -248,11 +246,10 @@ app.post("/inventoryRemove", (req, res) => {
     quantity,
     weight,
     packdate,
-    temp,
+    date_recvd,
     est,
   };
 
-  console.log("filter:", filter);
   if (!location || location.trim() === "") {
     return res.status(400).json({ error: "Location field cannot be blank." });
   }
@@ -304,10 +301,9 @@ app.post("/addHistory", (req, res) => {
     quantity: req.body.quantity,
     weight: req.body.weight,
     packdate: req.body.packdate,
-    temp: req.body.temp,
+    date_recvd: date_recvd || null,
     est: req.body.est,
   };
-  console.log(newHistory);
 
   HistoryModel.create(newHistory)
     .then((item) => res.status(201).json(item))
@@ -330,9 +326,8 @@ app.post("/login", (req, res) => {
   UserModel.findOne({ username: email })
     .then((user) => {
       if (user && user.password === password) {
-        // Generate JWT
         const token = jwt.sign({ userId: user._id }, SECRET_KEY, {
-          expiresIn: "5min", // Token expiration time
+          expiresIn: "5min",
         });
         res.json({ message: "Success", token });
       } else {

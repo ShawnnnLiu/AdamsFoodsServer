@@ -12,11 +12,11 @@ const FreezerSchema = new mongoose.Schema({
     quantity: String,
     weight: String,
     packdate: String,
-    temp: String,
+    date_recvd: String,
     est: String
 });
 
-// Connect the schema to the `UserDatabase` collection
+// Connect the schema to the `freezerinventories` collection
 const FreezerModel = mongoose.model("freezerinventories", FreezerSchema);
 
 module.exports = FreezerModel;
