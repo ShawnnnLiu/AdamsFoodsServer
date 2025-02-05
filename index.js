@@ -145,6 +145,8 @@ app.post("/inventoryFind", (req, res) => {
   if (date_recvd) query.date_recvd = date_recvd;
   if (est) query.est = est;
 
+  // console.log(query);
+
   FreezerModel.find(query)
     .then((items) => {
       if (items.length > 0) {
