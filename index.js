@@ -7,6 +7,9 @@ const FreezerModel = require("./models/Freezer");
 const HistoryModel = require("./models/History");
 const app = express();
 
+const multer = require('multer');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+
 console.log("=== SERVER RESTART ===", new Date().toLocaleString());
 
 // JWT auth
@@ -26,6 +29,7 @@ mongoose
   .catch((err) => console.error("Connection error", err));
 
 const fs = require("fs");
+const PDF = require("./models/PDF");
 
 // Global variable to store valid locations
 let validLocations = [];
@@ -290,34 +294,157 @@ app.post("/verifyLocation", (req, res) => {
 
 // ----------------- History Routes -----------------
 app.post("/addHistory", (req, res) => {
-  const newHistory = {
-    time: new Date().toLocaleString(),
-    change: req.body.change,
-    location: req.body.location,
-    lot: req.body.lot,
-    vendor: req.body.vendor,
-    brand: req.body.brand,
-    species: req.body.species,
-    description: req.body.description,
-    grade: req.body.grade,
-    quantity: req.body.quantity,
-    weight: req.body.weight,
-    packdate: req.body.packdate,
-    date_recvd: date_recvd || null,
-    est: req.body.est,
-  };
+  console.log("Received history request body:", req.body);
+  
+  try {
+    const newHistory = {
+      time: new Date().toLocaleString(),
+      change: req.body.change || '',
+      location: req.body.location || '',
+      lot: req.body.lot || '',
+      vendor: req.body.vendor || '',
+      brand: req.body.brand || '',
+      species: req.body.species || '',
+      description: req.body.description || '',
+      grade: req.body.grade || '',
+      quantity: String(req.body.quantity || ''),  // Convert to String
+      weight: String(req.body.weight || ''),      // Convert to String
+      packdate: req.body.packdate || '',
+      date_recvd: req.body.date_recvd || '',     // Match schema field name
+      est: req.body.est || ''
+    };
 
-  HistoryModel.create(newHistory)
-    .then((item) => res.status(201).json(item))
-    .catch((err) => {
-      console.error("Error adding history:", err);
-      res.status(500).json({ error: "Error adding history item" });
+    console.log("Processed history object:", newHistory);
+
+    // Basic validation
+    if (!newHistory.change) {
+      return res.status(400).json({ error: "Change type is required" });
+    }
+
+    HistoryModel.create(newHistory)
+      .then((item) => {
+        console.log("History item created successfully:", item);
+        res.status(201).json(item);
+      })
+      .catch((err) => {
+        console.error("Mongoose error creating history:", err);
+        res.status(500).json({ 
+          error: "Error adding history item", 
+          details: err.message,
+          stack: err.stack 
+        });
+      });
+  } catch (err) {
+    console.error("General error in addHistory:", err);
+    res.status(500).json({ 
+      error: "Server error processing history request",
+      details: err.message,
+      stack: err.stack
     });
+  }
 });
 
 app.get("/getHistory", (req, res) => {
   // TODO: Create route to the mongodb database to get the ten most recent changes made
 });
+
+// ----------------- S3 Routes -------------------
+// Configure multer for memory storage
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
+
+// Initialize S3 client
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
+});
+
+// Add these routes with your other routes
+app.post('/upload-pdf', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  try {
+    const fileKey = `pdfs/${Date.now()}-${req.file.originalname}`;
+
+    // Upload to S3
+    const command = new PutObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: fileKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype,
+    });
+
+    await s3Client.send(command);
+
+    const s3url = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
+
+    // Create PDF document in MongoDB
+    const input = {
+      fileName: req.file.originalname,
+      fileKey: fileKey,
+      fileUrl: s3url,
+      uploadDate: new Date().toISOString().split('T')[0]
+    };
+
+    // Create PDF document and send single response
+    const savedPDF = await PDF.create(input);
+    
+    return res.status(201).json({
+      message: 'File uploaded successfully',
+      fileUrl: s3url,
+      pdf: savedPDF
+    });
+
+  } catch (error) {
+    console.error('Error:', error);
+    return res.status(500).json({ error: 'Error uploading file' });
+  }
+});
+
+// Route to get list of PDFs (you'll need to implement MongoDB storage for this)
+app.get('/list-pdfs', async (req, res) => {
+  try {
+    const items = await PDF.find();
+    
+    if (items.length > 0) {
+      return res.json(items);
+    }
+    
+    return res.json([]);
+
+  } catch (error) {
+    console.error('Error fetching PDFs:', error);
+    return res.status(500).json({ 
+      error: 'An error occurred while retrieving the PDFs'
+    });
+  }
+});
+
+// Route to get a specific PDF
+app.get('/get-pdf/:fileKey', async (req, res) => {
+  try {
+    const command = new GetObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: req.params.fileKey
+    });
+
+    const { Body, ContentType } = await s3Client.send(command);
+    res.setHeader('Content-Type', ContentType);
+    Body.pipe(res);
+  } catch (error) {
+    res.status(500).json({ error: 'Error fetching PDF' });
+  }
+});
+
 
 // ----------------- User Routes -----------------
 

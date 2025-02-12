@@ -14,8 +14,13 @@ const HistorySchema = new mongoose.Schema({
   quantity: String,
   weight: String,
   packdate: String,
-  temp: String,
+  date_recvd: String,  // Changed from temp to date_recvd
   est: String,
+}, {
+  // Add timestamps for additional tracking
+  timestamps: true,
+  // Make the schema more flexible
+  strict: false
 });
 
 // Connect the schema to the `History` collection
