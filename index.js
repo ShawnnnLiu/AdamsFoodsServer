@@ -318,6 +318,11 @@ app.post("/addHistory", (req, res) => {
 });
 
 app.get("/getHistory", (req, res) => {
+  HistoryModel.find().sort({ time: -1 }).limit(10)
+  .then((histories) => res.json(histories))
+  .catch((err) =>
+    res.status(500).json({ error: "Error retrieving history item" })
+  );
   // TODO: Create route to the mongodb database to get the ten most recent changes made
 });
 
