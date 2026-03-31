@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 const UserModel = require("./models/User");
 const FreezerModel = require("./models/Freezer");
 const HistoryModel = require("./models/History");
@@ -16,7 +17,6 @@ const {
 
 console.log("=== SERVER RESTART ===", new Date().toLocaleString());
 
-// JWT auth
 require("dotenv").config();
 const SECRET_KEY = process.env.JWT_SECRET;
 
@@ -24,7 +24,6 @@ app.use(express.json());
 app.use(cors());
 
 // MongoDB connection
-const MONGODB_URI_SHAWN = process.env.MONGODB_URI_SHAWN;
 const MONGODB_URI_ANTHONY = process.env.MONGODB_URI_ANTHONY;
 
 mongoose
@@ -38,7 +37,6 @@ const PDF = require("./models/PDF");
 // Global variable to store valid locations
 let validLocations = [];
 
-// Read the locations from the .txt file and store in memory
 const loadLocations = () => {
   try {
     const data = fs.readFileSync("./locations.txt", "utf8");
@@ -52,7 +50,6 @@ const loadLocations = () => {
   }
 };
 
-// Call this function once when the server starts
 loadLocations();
 
 // ----------------- JWT Middleware -----------------
@@ -64,7 +61,7 @@ const verifyToken = (req, res, next) => {
 
   jwt.verify(token, SECRET_KEY, (err, decoded) => {
     if (err) {
-      return res.status(401).json({ message: "Invalid token" });
+      return res.status(401).json({ message: "Invalid or expired token" });
     }
     req.userId = decoded.userId;
     next();
@@ -73,8 +70,8 @@ const verifyToken = (req, res, next) => {
 
 // ----------------- Inventory Routes -----------------
 
-// Add inventory item (Protected Route)
-app.post("/inventoryAdd", (req, res) => {
+app.post("/inventoryAdd", verifyToken, async (req, res) => {
+  const { inputs, force } = req.body;
   const {
     location,
     lot,
@@ -88,7 +85,7 @@ app.post("/inventoryAdd", (req, res) => {
     packdate,
     date_recvd,
     est,
-  } = req.body.inputs || {};
+  } = inputs || {};
 
   if (!location || location.trim() === "") {
     return res.status(400).json({ error: "Location field cannot be blank." });
@@ -98,32 +95,54 @@ app.post("/inventoryAdd", (req, res) => {
     return res.status(400).json({ error: "Location Does Not Exist" });
   }
 
-  const newItem = {
-    location: location.toUpperCase(),
-    lot,
-    vendor,
-    brand,
-    species,
-    description,
-    grade,
-    quantity,
-    weight,
-    packdate,
-    date_recvd,
-    est,
-  };
+  const locationUpper = location.toUpperCase();
 
-  FreezerModel.create(newItem)
-    .then((createdItem) => res.status(201).json(createdItem))
-    .catch((err) =>
-      res
-        .status(500)
-        .json({ error: "An error occurred while adding the item." })
-    );
+  try {
+    // Hard block: same location + same lot is always a duplicate
+    if (lot) {
+      const exactDuplicate = await FreezerModel.findOne({ location: locationUpper, lot });
+      if (exactDuplicate) {
+        return res.status(409).json({
+          error: `Lot ${lot} already exists at ${location}. Use Update to modify it.`,
+        });
+      }
+    }
+
+    // Soft block: location is occupied — warn unless the user confirmed (force flag)
+    if (!force) {
+      const occupiedCount = await FreezerModel.countDocuments({ location: locationUpper });
+      if (occupiedCount > 0) {
+        return res.status(409).json({
+          error: `${location} already has ${occupiedCount} item(s) stored there.`,
+          code: "LOCATION_OCCUPIED",
+          count: occupiedCount,
+        });
+      }
+    }
+
+    const newItem = {
+      location: locationUpper,
+      lot,
+      vendor,
+      brand,
+      species,
+      description,
+      grade,
+      quantity,
+      weight,
+      packdate,
+      date_recvd,
+      est,
+    };
+
+    const createdItem = await FreezerModel.create(newItem);
+    res.status(201).json(createdItem);
+  } catch {
+    res.status(500).json({ error: "An error occurred while adding the item." });
+  }
 });
 
-// Find inventory item (Protected Route)
-app.post("/inventoryFind", (req, res) => {
+app.post("/inventoryFind", verifyToken, (req, res) => {
   const {
     location,
     lot,
@@ -153,8 +172,6 @@ app.post("/inventoryFind", (req, res) => {
   if (date_recvd) query.date_recvd = date_recvd;
   if (est) query.est = est;
 
-  // console.log(query);
-
   FreezerModel.find(query)
     .then((items) => {
       if (items.length > 0) {
@@ -163,15 +180,12 @@ app.post("/inventoryFind", (req, res) => {
         res.send("INVALID");
       }
     })
-    .catch((err) =>
-      res
-        .status(500)
-        .json({ error: "An error occurred while retrieving the items." })
+    .catch(() =>
+      res.status(500).json({ error: "An error occurred while retrieving the items." })
     );
 });
 
-// Update inventory item (Protected Route)
-app.post("/inventoryUpdate", (req, res) => {
+app.post("/inventoryUpdate", verifyToken, (req, res) => {
   const {
     location,
     lot,
@@ -187,8 +201,6 @@ app.post("/inventoryUpdate", (req, res) => {
     est,
     currentItem,
   } = req.body.updateInputs || {};
-
-  const filter = currentItem;
 
   if (!location) {
     return res.status(400).json({
@@ -211,9 +223,7 @@ app.post("/inventoryUpdate", (req, res) => {
     est,
   };
 
-  const options = { new: true };
-
-  FreezerModel.findOneAndUpdate(filter, update, options)
+  FreezerModel.findOneAndUpdate(currentItem, update, { new: true })
     .then((item) => {
       if (item) {
         res.status(200).json(item);
@@ -221,15 +231,12 @@ app.post("/inventoryUpdate", (req, res) => {
         res.status(404).json({ error: "No Items Found" });
       }
     })
-    .catch((err) =>
-      res
-        .status(500)
-        .json({ error: "An Error occurred while Updating the Item." })
+    .catch(() =>
+      res.status(500).json({ error: "An error occurred while updating the item." })
     );
 });
 
-// Remove inventory item (Protected Route)
-app.post("/inventoryRemove", (req, res) => {
+app.post("/inventoryRemove", verifyToken, (req, res) => {
   const {
     location,
     lot,
@@ -267,29 +274,20 @@ app.post("/inventoryRemove", (req, res) => {
   FreezerModel.findOne(filter)
     .then((item) => {
       if (item) {
-        return FreezerModel.deleteOne(filter)
-          .then(() =>
-            res.status(200).json({ message: "Item Successfully Deleted." })
-          )
-          .catch((err) =>
-            res
-              .status(500)
-              .json({ error: "An Error occurred while Removing the Item." })
-          );
+        return FreezerModel.deleteOne(filter).then(() =>
+          res.status(200).json({ message: "Item Successfully Deleted." })
+        );
       } else {
         res.status(404).json({ error: "No Items Found" });
       }
     })
-    .catch((err) =>
-      res
-        .status(500)
-        .json({ error: "An Error occurred while Removing the Item." })
+    .catch(() =>
+      res.status(500).json({ error: "An error occurred while removing the item." })
     );
 });
 
-app.post("/verifyLocation", (req, res) => {
+app.post("/verifyLocation", verifyToken, (req, res) => {
   const location = req.body.location;
-
   if (!validLocations.includes(location)) {
     return res.send("INVALID");
   }
@@ -297,80 +295,55 @@ app.post("/verifyLocation", (req, res) => {
 });
 
 // ----------------- History Routes -----------------
-app.post("/addHistory", (req, res) => {
-  console.log("Received history request body:", req.body);
 
-  try {
-    const newHistory = {
-      time: new Date().toLocaleString(),
-      change: req.body.change || "",
-      location: req.body.location || "",
-      lot: req.body.lot || "",
-      vendor: req.body.vendor || "",
-      brand: req.body.brand || "",
-      species: req.body.species || "",
-      description: req.body.description || "",
-      grade: req.body.grade || "",
-      quantity: String(req.body.quantity || ""), // Convert to String
-      weight: String(req.body.weight || ""), // Convert to String
-      packdate: req.body.packdate || "",
-      date_recvd: req.body.date_recvd || "", // Match schema field name
-      est: req.body.est || "",
-    };
+app.post("/addHistory", verifyToken, (req, res) => {
+  const newHistory = {
+    time: new Date().toLocaleString(),
+    change: req.body.change || "",
+    location: req.body.location || "",
+    lot: req.body.lot || "",
+    vendor: req.body.vendor || "",
+    brand: req.body.brand || "",
+    species: req.body.species || "",
+    description: req.body.description || "",
+    grade: req.body.grade || "",
+    quantity: String(req.body.quantity || ""),
+    weight: String(req.body.weight || ""),
+    packdate: req.body.packdate || "",
+    date_recvd: req.body.date_recvd || "",
+    est: req.body.est || "",
+  };
 
-    console.log("Processed history object:", newHistory);
-
-    // Basic validation
-    if (!newHistory.change) {
-      return res.status(400).json({ error: "Change type is required" });
-    }
-
-    HistoryModel.create(newHistory)
-      .then((item) => {
-        console.log("History item created successfully:", item);
-        res.status(201).json(item);
-      })
-      .catch((err) => {
-        console.error("Mongoose error creating history:", err);
-        res.status(500).json({
-          error: "Error adding history item",
-          details: err.message,
-          stack: err.stack,
-        });
-      });
-  } catch (err) {
-    console.error("General error in addHistory:", err);
-    res.status(500).json({
-      error: "Server error processing history request",
-      details: err.message,
-      stack: err.stack,
-    });
+  if (!newHistory.change) {
+    return res.status(400).json({ error: "Change type is required" });
   }
+
+  HistoryModel.create(newHistory)
+    .then((item) => res.status(201).json(item))
+    .catch(() =>
+      res.status(500).json({ error: "Error adding history item" })
+    );
 });
 
-app.get("/getHistory", (req, res) => {
-  try {
-    HistoryModel.find()
-      .sort({ _id: -1 })  
-      .limit(15)         
-      .then((items) => {
-        res.json(items);
-      });
-  } catch (err) {
-    console.error("Unable to get History:", err);
-  }
+app.get("/getHistory", verifyToken, (req, res) => {
+  HistoryModel.find()
+    .sort({ _id: -1 })
+    .limit(15)
+    .then((items) => res.json(items))
+    .catch(() =>
+      res.status(500).json({ error: "Unable to retrieve history" })
+    );
 });
 
 // ----------------- S3 Routes -------------------
-// Configure multer for memory storage
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024,
   },
 });
 
-// Initialize S3 client
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -379,8 +352,7 @@ const s3Client = new S3Client({
   },
 });
 
-// Add these routes with your other routes
-app.post("/upload-pdf", upload.single("file"), async (req, res) => {
+app.post("/upload-pdf", verifyToken, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
@@ -388,7 +360,6 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
   try {
     const fileKey = `pdfs/${Date.now()}-${req.file.originalname}`;
 
-    // Upload to S3
     const command = new PutObjectCommand({
       Bucket: process.env.AWS_BUCKET_NAME,
       Key: fileKey,
@@ -400,16 +371,12 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
 
     const s3url = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileKey}`;
 
-    // Create PDF document in MongoDB
-    const input = {
+    const savedPDF = await PDF.create({
       fileName: req.file.originalname,
-      fileKey: fileKey,
+      fileKey,
       fileUrl: s3url,
       uploadDate: new Date().toISOString().split("T")[0],
-    };
-
-    // Create PDF document and send single response
-    const savedPDF = await PDF.create(input);
+    });
 
     return res.status(201).json({
       message: "File uploaded successfully",
@@ -417,31 +384,20 @@ app.post("/upload-pdf", upload.single("file"), async (req, res) => {
       pdf: savedPDF,
     });
   } catch (error) {
-    console.error("Error:", error);
     return res.status(500).json({ error: "Error uploading file" });
   }
 });
 
-// Route to get list of PDFs (you'll need to implement MongoDB storage for this)
-app.get("/list-pdfs", async (req, res) => {
+app.get("/list-pdfs", verifyToken, async (req, res) => {
   try {
     const items = await PDF.find();
-
-    if (items.length > 0) {
-      return res.json(items);
-    }
-
-    return res.json([]);
-  } catch (error) {
-    console.error("Error fetching PDFs:", error);
-    return res.status(500).json({
-      error: "An error occurred while retrieving the PDFs",
-    });
+    return res.json(items);
+  } catch {
+    return res.status(500).json({ error: "An error occurred while retrieving the PDFs" });
   }
 });
 
-// Route to get a specific PDF
-app.get("/get-pdf/:fileKey", async (req, res) => {
+app.get("/get-pdf/:fileKey", verifyToken, async (req, res) => {
   try {
     const command = new GetObjectCommand({
       Bucket: process.env.AWS_BUCKET_NAME,
@@ -451,48 +407,60 @@ app.get("/get-pdf/:fileKey", async (req, res) => {
     const { Body, ContentType } = await s3Client.send(command);
     res.setHeader("Content-Type", ContentType);
     Body.pipe(res);
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "Error fetching PDF" });
   }
 });
 
 // ----------------- User Routes -----------------
 
-// User login (Generates JWT)
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  UserModel.findOne({ username: email })
-    .then((user) => {
-      if (user && user.password === password) {
-        const token = jwt.sign({ userId: user._id }, SECRET_KEY, {
-          expiresIn: "5min",
-        });
-        res.json({ message: "Success", token });
-      } else {
-        res.status(401).json({ message: "Invalid credentials" });
+  try {
+    const user = await UserModel.findOne({ username: email });
+    if (!user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Support legacy plaintext passwords with auto-migration to bcrypt
+    const isLegacyPlaintext = !user.password.startsWith("$2");
+    let passwordMatch = false;
+
+    if (isLegacyPlaintext) {
+      passwordMatch = user.password === password;
+      if (passwordMatch) {
+        // Migrate to hashed password transparently
+        const hashed = await bcrypt.hash(password, 10);
+        await UserModel.updateOne({ _id: user._id }, { password: hashed });
       }
-    })
-    .catch((err) => res.status(500).json({ error: "Internal Server Error" }));
+    } else {
+      passwordMatch = await bcrypt.compare(password, user.password);
+    }
+
+    if (!passwordMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ userId: user._id }, SECRET_KEY, {
+      expiresIn: "8h",
+    });
+    res.json({ message: "Success", token });
+  } catch {
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-// User signup
-app.post("/signup", (req, res) => {
+app.post("/signup", async (req, res) => {
   const { email, password } = req.body;
 
-  const newUser = {
-    username: email,
-    password: password,
-  };
-
-  UserModel.create(newUser)
-    .then((user) => res.json(user))
-    .catch((err) => res.status(500).json({ error: "Error creating user" }));
-});
-
-// Protected route for homepage
-app.get("/", verifyToken, (req, res) => {
-  res.json({ message: "Welcome to the protected homepage" });
+  try {
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await UserModel.create({ username: email, password: hashed });
+    res.json({ message: "User created successfully" });
+  } catch {
+    res.status(500).json({ error: "Error creating user" });
+  }
 });
 
 // ----------------- Server -----------------
