@@ -104,6 +104,7 @@ app.post("/inventoryAdd", verifyToken, async (req, res) => {
       if (exactDuplicate) {
         return res.status(409).json({
           error: `Lot ${lot} already exists at ${location}. Use Update to modify it.`,
+          code: "EXACT_DUPLICATE",
         });
       }
     }
@@ -292,6 +293,21 @@ app.post("/verifyLocation", verifyToken, (req, res) => {
     return res.send("INVALID");
   }
   return res.send("OK");
+});
+
+app.get("/inventoryDistinct", verifyToken, async (req, res) => {
+  try {
+    const [vendors, brands] = await Promise.all([
+      FreezerModel.distinct("vendor"),
+      FreezerModel.distinct("brand"),
+    ]);
+    res.json({
+      vendors: vendors.filter(Boolean).sort(),
+      brands: brands.filter(Boolean).sort(),
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch suggestions" });
+  }
 });
 
 // ----------------- History Routes -----------------
