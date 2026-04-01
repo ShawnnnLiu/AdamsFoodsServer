@@ -85,6 +85,7 @@ app.post("/inventoryAdd", verifyToken, async (req, res) => {
     packdate,
     date_recvd,
     est,
+    price,
   } = inputs || {};
 
   if (!location || location.trim() === "") {
@@ -134,6 +135,7 @@ app.post("/inventoryAdd", verifyToken, async (req, res) => {
       packdate,
       date_recvd,
       est,
+      price,
     };
 
     const createdItem = await FreezerModel.create(newItem);
@@ -157,6 +159,7 @@ app.post("/inventoryFind", verifyToken, (req, res) => {
     packdate,
     date_recvd,
     est,
+    price,
   } = req.body.inputs || {};
 
   const query = {};
@@ -172,6 +175,7 @@ app.post("/inventoryFind", verifyToken, (req, res) => {
   if (packdate) query.packdate = packdate;
   if (date_recvd) query.date_recvd = date_recvd;
   if (est) query.est = est;
+  if (price) query.price = price;
 
   FreezerModel.find(query)
     .then((items) => {
@@ -200,6 +204,7 @@ app.post("/inventoryUpdate", verifyToken, (req, res) => {
     packdate,
     date_recvd,
     est,
+    price,
     currentItem,
   } = req.body.updateInputs || {};
 
@@ -222,6 +227,7 @@ app.post("/inventoryUpdate", verifyToken, (req, res) => {
     packdate,
     date_recvd,
     est,
+    price,
   };
 
   FreezerModel.findOneAndUpdate(currentItem, update, { new: true })
@@ -251,6 +257,7 @@ app.post("/inventoryRemove", verifyToken, (req, res) => {
     packdate,
     date_recvd,
     est,
+    price,
   } = req.body.currentItem || {};
 
   const filter = {
@@ -266,6 +273,7 @@ app.post("/inventoryRemove", verifyToken, (req, res) => {
     packdate,
     date_recvd,
     est,
+    price,
   };
 
   if (!location || location.trim() === "") {
@@ -287,12 +295,90 @@ app.post("/inventoryRemove", verifyToken, (req, res) => {
     );
 });
 
+app.post("/inventoryMove", verifyToken, async (req, res) => {
+  const { itemId, destLocation } = req.body;
+  if (!itemId || !destLocation) {
+    return res.status(400).json({ error: "itemId and destLocation are required." });
+  }
+  try {
+    const updated = await FreezerModel.findByIdAndUpdate(
+      itemId,
+      { location: destLocation.toUpperCase() },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ error: "Item not found." });
+    res.status(200).json(updated);
+  } catch (err) {
+    res.status(500).json({ error: "An error occurred while moving the item." });
+  }
+});
+
+app.post("/inventoryBulkRemove", verifyToken, async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "No IDs provided." });
+  }
+  try {
+    const result = await FreezerModel.deleteMany({ _id: { $in: ids } });
+    res.status(200).json({ message: `${result.deletedCount} item(s) removed.`, deletedCount: result.deletedCount });
+  } catch (err) {
+    res.status(500).json({ error: "An error occurred while removing items." });
+  }
+});
+
 app.post("/verifyLocation", verifyToken, (req, res) => {
   const location = req.body.location;
   if (!validLocations.includes(location)) {
     return res.send("INVALID");
   }
   return res.send("OK");
+});
+
+app.get("/inventoryStats", verifyToken, async (req, res) => {
+  try {
+    const [totalItems, totalWeight, bySpecies, byGrade, byVendor, occupiedLocations] = await Promise.all([
+      FreezerModel.countDocuments(),
+      FreezerModel.aggregate([{ $group: { _id: null, total: { $sum: { $toDouble: "$weight" } }, value: { $sum: { $multiply: [{ $toDouble: "$weight" }, { $toDouble: { $ifNull: ["$price", "0"] } }] } } } }]),
+      FreezerModel.aggregate([
+        { $group: { _id: "$species", count: { $sum: 1 }, weight: { $sum: { $toDouble: "$weight" } }, value: { $sum: { $multiply: [{ $toDouble: "$weight" }, { $toDouble: { $ifNull: ["$price", "0"] } }] } } } },
+        { $match: { _id: { $ne: null } } },
+        { $sort: { count: -1 } },
+      ]),
+      FreezerModel.aggregate([
+        { $group: { _id: "$grade", count: { $sum: 1 }, weight: { $sum: { $toDouble: "$weight" } }, value: { $sum: { $multiply: [{ $toDouble: "$weight" }, { $toDouble: { $ifNull: ["$price", "0"] } }] } } } },
+        { $match: { _id: { $ne: null } } },
+        { $sort: { count: -1 } },
+      ]),
+      FreezerModel.aggregate([
+        { $group: { _id: "$vendor", count: { $sum: 1 }, weight: { $sum: { $toDouble: "$weight" } }, value: { $sum: { $multiply: [{ $toDouble: "$weight" }, { $toDouble: { $ifNull: ["$price", "0"] } }] } } } },
+        { $match: { _id: { $ne: null } } },
+        { $sort: { count: -1 } },
+      ]),
+      FreezerModel.distinct("location"),
+    ]);
+
+    res.json({
+      totalItems,
+      totalWeight: totalWeight[0]?.total ?? 0,
+      totalValue: totalWeight[0]?.value ?? 0,
+      occupiedLocations: occupiedLocations.length,
+      bySpecies,
+      byGrade,
+      byVendor,
+    });
+  } catch (err) {
+    console.error("Stats error:", err);
+    res.status(500).json({ error: "Failed to fetch stats" });
+  }
+});
+
+app.get("/inventoryAll", verifyToken, async (req, res) => {
+  try {
+    const items = await FreezerModel.find().lean();
+    return res.json(items);
+  } catch {
+    return res.status(500).json({ error: "Failed to fetch inventory" });
+  }
 });
 
 app.get("/inventoryDistinct", verifyToken, async (req, res) => {
@@ -344,7 +430,7 @@ app.post("/addHistory", verifyToken, (req, res) => {
 app.get("/getHistory", verifyToken, (req, res) => {
   HistoryModel.find()
     .sort({ _id: -1 })
-    .limit(15)
+    .limit(50)
     .then((items) => res.json(items))
     .catch(() =>
       res.status(500).json({ error: "Unable to retrieve history" })
@@ -400,7 +486,8 @@ app.post("/upload-pdf", verifyToken, upload.single("file"), async (req, res) => 
       pdf: savedPDF,
     });
   } catch (error) {
-    return res.status(500).json({ error: "Error uploading file" });
+    console.error("Upload error:", error);
+    return res.status(500).json({ error: error.message || "Error uploading file" });
   }
 });
 
@@ -425,6 +512,25 @@ app.get("/get-pdf/:fileKey", verifyToken, async (req, res) => {
     Body.pipe(res);
   } catch {
     res.status(500).json({ error: "Error fetching PDF" });
+  }
+});
+
+app.delete("/delete-pdf/:id", verifyToken, async (req, res) => {
+  try {
+    const pdf = await PDF.findById(req.params.id);
+    if (!pdf) return res.status(404).json({ error: "PDF not found" });
+
+    const { DeleteObjectCommand } = require("@aws-sdk/client-s3");
+    await s3Client.send(new DeleteObjectCommand({
+      Bucket: process.env.AWS_BUCKET_NAME,
+      Key: pdf.fileKey,
+    }));
+
+    await PDF.findByIdAndDelete(req.params.id);
+    return res.json({ message: "PDF deleted successfully" });
+  } catch (error) {
+    console.error("Delete PDF error:", error);
+    return res.status(500).json({ error: "Error deleting PDF" });
   }
 });
 
